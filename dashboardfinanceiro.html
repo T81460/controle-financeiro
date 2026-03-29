@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BOX 300 WOOD - Gestão Profissional</title>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { --primary: #5d4037; --accent: #8d6e63; --success: #2e7d32; --danger: #c62828; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f1ea; margin: 0; padding: 10px; color: #333; }
+        header { background: var(--primary); color: white; padding: 15px; text-align: center; border-radius: 8px; margin-bottom: 15px; }
+        .card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 15px; }
+        .grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        input { width: 100%; padding: 12px; margin: 5px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size: 16px; }
+        button { width: 100%; padding: 15px; background: var(--success); color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .btn-excluir { background: var(--danger); padding: 5px 10px; font-size: 12px; border-radius: 3px; cursor: pointer; color: white; border: none; }
+        
+        /* Filtros e Gráficos */
+        .filtros { display: flex; gap: 10px; margin-bottom: 10px; }
+        .btn-filtro { flex: 1; padding: 10px; background: #ddd; border: none; border-radius: 5px; cursor: pointer; }
+        .btn-filtro.active { background: var(--accent); color: white; }
+        
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; min-width: 600px; }
+        th, td { border-bottom: 1px solid #eee; padding: 12px; text-align: left; }
+        th { background: #f8f8f8; color: var(--primary); }
+        .lucro-texto { color: var(--success); font-weight: bold; }
+        
+        @media (max-width: 600px) { .grid-form { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>BOX 300 WOOD</h1>
+    <p>Painel de Controle Financeiro</p>
+</header>
+
+<div class="card">
+    <h3>Novo Lançamento</h3>
+    <div class="grid-form">
+        <input type="text" id="cliente" placeholder="Nome do Cliente">
+        <input type="text" id="produto" placeholder="Produto Vendido">
+        <input type="text" id="origem" placeholder="Origem (Ex: WhatsApp)">
+        <input type="number" id="venda" placeholder="Valor da Venda (R$)">
+        <input type="number" id="madeira" placeholder="Custo Madeira (R$)">
+        <input type="number" id="energia" placeholder="Custo Energia (R$)">
+    </div>
+    <button onclick="salvarNoFirebase()">REGISTRAR VENDA</button>
+</div>
+
+<div class="card">
+    <h3>Análise de Faturamento</h3>
+    <div class="filtros">
+        <button class="btn-filtro active" onclick="mudarFiltro('dia', this)">Hoje</button>
+        <button class="btn-filtro" onclick="mudarFiltro('semana', this)">Semana</button>
+        <button class="btn-filtro" onclick="mudarFiltro('mes', this)">Mês</button>
+    </div>
+    <div style="height: 250px;">
+        <canvas id="graficoFaturamento"></canvas>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Histórico de Vendas</h3>
+    <div class="table-container">
+        <table id="tabelaDados">
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Cliente</th>
+                    <th>Produto</th>
+                    <th>Venda</th>
+                    <th>Lucro</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    // Substitua pelos SEUS dados do Firebase
+    const firebaseConfig = {
+  apiKey: "AIzaSyBnjVn_oaTwdRz6Ce5fbqGoPq7GbhmY9Dk",
+  authDomain: "box300wood.firebaseapp.com",
+  databaseURL: "https://box300wood-default-rtdb.firebaseio.com",
+  projectId: "box300wood",
+  storageBucket: "box300wood.firebasestorage.app",
+  messagingSenderId: "725998484355",
+  appId: "1:725998484355:web:4ae414f6411d22fd5894b6",
+  measurementId: "G-V3EKQCNWS4"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    let chart;
+    let dadosVendas = [];
+
+    function salvarNoFirebase() {
+        const dados = {
+            cliente: document.getElementById('cliente').value,
+            produto: document.getElementById('produto').value,
+            origem: document.getElementById('origem').value,
+            venda: parseFloat(document.getElementById('venda').value) || 0,
+            madeira: parseFloat(document.getElementById('madeira').value) || 0,
+            energia: parseFloat(document.getElementById('energia').value) || 0,
+            timestamp: Date.now() // Importante para os filtros de tempo
+        };
+
+        if(!dados.cliente || !dados.produto || dados.venda === 0) return alert("Preencha os campos principais!");
+
+        db.ref('vendas_v2').push(dados).then(() => {
+            alert("Venda registrada!");
+            document.querySelectorAll('input').forEach(i => i.value = "");
+        });
+    }
+
+    function excluirRegistro(id) {
+        if(confirm("Deseja realmente excluir esta venda?")) {
+            db.ref('vendas_v2/' + id).remove();
+        }
+    }
+
+    function mudarFiltro(tipo, btn) {
+        document.querySelectorAll('.btn-filtro').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        processarDados(tipo);
+    }
+
+    db.ref('vendas_v2').on('value', (snapshot) => {
+        dadosVendas = [];
+        snapshot.forEach(child => {
+            dadosVendas.push({ id: child.key, ...child.val() });
+        });
+        processarDados('dia'); // Padrão ao carregar
+    });
+
+    function processarDados(periodo) {
+        const agora = Date.now();
+        const milisegundosDia = 24 * 60 * 60 * 1000;
+        
+        let filtrados = dadosVendas.filter(v => {
+            if(periodo === 'dia') return (agora - v.timestamp) < milisegundosDia;
+            if(periodo === 'semana') return (agora - v.timestamp) < (milisegundosDia * 7);
+            if(periodo === 'mes') return (agora - v.timestamp) < (milisegundosDia * 30);
+        });
+
+        atualizarTabela(filtrados);
+        atualizarGrafico(filtrados, periodo);
+    }
+
+    function atualizarTabela(lista) {
+        const tbody = document.querySelector('#tabelaDados tbody');
+        tbody.innerHTML = "";
+        lista.reverse().forEach(v => {
+            const lucro = v.venda - (v.madeira + v.energia);
+            const dataFmt = new Date(v.timestamp).toLocaleDateString('pt-br');
+            tbody.innerHTML += `<tr>
+                <td>${dataFmt}</td>
+                <td>${v.cliente}</td>
+                <td>${v.produto}</td>
+                <td>R$ ${v.venda.toFixed(2)}</td>
+                <td class="lucro-texto">R$ ${lucro.toFixed(2)}</td>
+                <td><button class="btn-excluir" onclick="excluirRegistro('${v.id}')">Excluir</button></td>
+            </tr>`;
+        });
+    }
+
+    function atualizarGrafico(lista, periodo) {
+        const faturamento = lista.reduce((sum, v) => sum + v.venda, 0);
+        const custos = lista.reduce((sum, v) => sum + (v.madeira + v.energia), 0);
+        const ctx = document.getElementById('graficoFaturamento').getContext('2d');
+
+        if(chart) chart.destroy();
+        chart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['Faturamento Total', 'Custos Totais'],
+                datasets: [{
+                    label: 'R$ no período: ' + periodo,
+                    data: [faturamento, custos],
+                    backgroundColor: ['#2e7d32', '#c62828']
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+</script>
+
+</body>
+</html>
